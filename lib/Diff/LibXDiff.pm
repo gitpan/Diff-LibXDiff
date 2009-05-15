@@ -9,11 +9,11 @@ Diff::LibXDiff - Calculate a diff with LibXDiff (via XS)
 
 =head1 VERSION
 
-Version 0.01
+Version 0.02
 
 =cut
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 =head1 SYNOPSIS
 
@@ -47,7 +47,7 @@ our $VERSION = '0.01';
 
 Diff::LibXDiff is a binding of LibXDiff (L<http://www.xmailserver.org/xdiff-lib.html>) to Perl via XS
 
-LibXDiff is the basis of the diff-engine for git
+LibXDiff is the basis of the diff engine for git
 
 Currently only the C<diff> method is supported, and that only with text diffing. More coming soon.
 
@@ -65,7 +65,7 @@ bootstrap Diff::LibXDiff $VERSION;
 
 =head1 METHODS
 
-=head1 $diff = Diff::LibXDiff->diff( $string1, $string2 )
+=head2 $diff = Diff::LibXDiff->diff( $string1, $string2 )
 
 Calculate the textual diff of $string1 and $string2 and return the result as a string
 
