@@ -9,11 +9,11 @@ Diff::LibXDiff - Calculate a diff with LibXDiff (via XS)
 
 =head1 VERSION
 
-Version 0.03
+Version 0.04
 
 =cut
 
-our $VERSION = '0.03';
+our $VERSION = '0.04';
 
 =head1 SYNOPSIS
 
@@ -49,8 +49,6 @@ Diff::LibXDiff is a binding of LibXDiff (L<http://www.xmailserver.org/xdiff-lib.
 
 LibXDiff is the basis of the diff engine for git
 
-Currently only the C<diff> method is supported, and that only with text diffing. More coming soon.
-
 =cut
 
 require Exporter;
@@ -69,6 +67,14 @@ bootstrap Diff::LibXDiff $VERSION;
 
 Calculate the textual diff of $string1 and $string2 and return the result as a string
 
+=head2 $patched = Diff::LibXDiff->patch( $original, $patch )
+
+=head2 ( $patched, $rejected ) = Diff::LibXDiff->patch( $original, $patch )
+
+Calculate the patched string given an original string and a patch string
+
+If the patching algorithm cannot place a hunk, it will return a second "rejected" result (if called in list context)
+
 =cut
 
 sub diff {
@@ -86,7 +92,31 @@ sub diff {
 
     croak join '', "Unable to process the diff of string1 & string2: ", join ', ', @error if @error;
 
-    return $result->{stringr};
+    return wantarray ?
+        ( $result->{result} ) :
+        $result->{result}
+    ;
+}
+
+sub patch {
+    my $self = shift;
+    my ($string1, $string2) = @_;
+
+    croak "string1 not defined" unless defined $string1;
+    croak "string2 not defined" unless defined $string2;
+    croak "string1 isn't a string" if ref $string1;
+    croak "string2 isn't a string" if ref $string2;
+
+    my $result = _xpatch( $string1, $string2 );
+
+    my @error = @{ $result->{error} };
+
+    croak join '', "Unable to process the patch of string1 & string2: ", join ', ', @error if @error;
+
+    return wantarray ?
+        ( $result->{result},  $result->{rejected_result} ) :
+        $result->{result};
+
 }
 
 =head1 AUTHOR
