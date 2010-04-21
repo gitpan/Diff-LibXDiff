@@ -1,3 +1,4 @@
+/* vim: set ts=4 et sw=4: */
 #include <EXTERN.h>
 #include <perl.h>
 #include <XSUB.h>
@@ -51,10 +52,11 @@ static void initialize_allocator(void) {
     }
 }
 
-#define CONTEXT_string_result(AT) (context->string_result[AT])
-#define CONTEXT_mmf(AT) (context->mmf[AT])
-#define CONTEXT_mmf_result(AT) (context->mmf_result[AT])
-#define CONTEXT_add_error(ERROR) context->error[++context->error_counter - 1] = ERROR;
+#define CONTEXT_string_result(_INDEX_) (context->string_result[_INDEX_])
+#define CONTEXT_string_result_length(_INDEX_) (context->string_result_length[_INDEX_])
+#define CONTEXT_mmf(_INDEX_) (context->mmf[_INDEX_])
+#define CONTEXT_mmf_result(_INDEX_) (context->mmf_result[_INDEX_])
+#define CONTEXT_add_error(_ERROR_) context->error[++context->error_counter - 1] = _ERROR_;
 
 #define CONTEXT_error_size 3
 #define CONTEXT_string_result_size 2
@@ -63,6 +65,7 @@ static void initialize_allocator(void) {
 
 typedef struct {
     char *string_result[CONTEXT_string_result_size];
+    int string_result_length[CONTEXT_string_result_size];
 	mmfile_t mmf[CONTEXT_mmf_size];
 	mmfile_t mmf_result[2];
     const char *error[CONTEXT_error_size];
@@ -82,6 +85,22 @@ static int CONTEXT_mmf_result_2_string_result( context_t* context, int index ) {
         return size - wrote;
     }
     string_result[size] = 0;
+    CONTEXT_string_result_length(index) = size;
+    return 0;
+}
+
+static int CONTEXT_mmf_result_2_binary_result( context_t* context, int index ) {
+
+    mmfile_t *mmf_r1 = &CONTEXT_mmf_result(index);
+    int size = xdl_mmfile_size( mmf_r1 );
+    int wrote = 0;
+    char *string_result = CONTEXT_string_result(index) = malloc( sizeof(char) * (size + 1) );
+
+    xdl_seek_mmfile( mmf_r1, 0);
+    if ( (wrote = xdl_read_mmfile( mmf_r1, string_result, size )) < size ) {
+        return size - wrote;
+    }
+    CONTEXT_string_result_length( index ) = size;
     return 0;
 }
 
@@ -98,6 +117,20 @@ static void CONTEXT_cleanup( context_t* context ) {
         xdl_free_mmfile( &( context->mmf_result[ ii ] ) );
 }
 
+static const char* _binary_2_mmfile( mmfile_t* mmf, const char* string, const int length ) {
+
+    initialize_allocator();
+	if ( xdl_init_mmfile( mmf, MMF_STD_BLKSIZE, XDL_MMF_ATOMIC ) < 0 ) {
+		return "Unable to initialize mmfile";
+	}
+
+    int wrote = 0;
+    if ( (wrote = xdl_write_mmfile( mmf, string, length )) < length ) {
+        return "Couldn't write entire string to mmfile";
+    }
+
+    return 0;
+}
 static const char* _string_2_mmfile( mmfile_t* mmf, const char* string ) {
 
     initialize_allocator();
@@ -165,10 +198,71 @@ void __xpatch( context_t *context, const char *string1, const char *string2 ) {
 
         if ( CONTEXT_mmf_result_2_string_result( context, 0 ) ) {
             CONTEXT_add_error( "Wasn't able to read entire mmfile result (mmf_r1) (xdl_read_mmfile)" );
+            return;
         }
 
         if ( CONTEXT_mmf_result_2_string_result( context, 1 ) ) {
             CONTEXT_add_error( "Wasn't able to read entire mmfile result (mmf_r2) (xdl_read_mmfile)" );
+            return;
+        }
+    }
+}
+
+void __xbpatch( context_t *context, const char *string1, const int len1, const char *string2, const int len2 ) {
+
+	mmfile_t *mmf1, *mmf2, *mmf_r1, *mmf_r2;
+    const char *error;
+
+    mmf1 = &CONTEXT_mmf(0);
+    mmf2 = &CONTEXT_mmf(1);
+    mmf_r1 = &CONTEXT_mmf_result(0);
+    mmf_r2 = &CONTEXT_mmf_result(1);
+
+    initialize_allocator();
+
+    if ( error = _binary_2_mmfile( mmf1, string1, len1 ) ) {
+        CONTEXT_add_error( error );
+        CONTEXT_add_error( "Couldn't load string1 into mmfile" );
+        return;
+    }
+
+    if ( error = _binary_2_mmfile( mmf2, string2, len2 ) ) {
+        CONTEXT_add_error( error );
+        CONTEXT_add_error( "Couldn't load string2 into mmfile" );
+        return;
+    }
+    
+    /* Compact the files - needed for binary operations */
+    mmfile_t  mmf1c;
+    if (xdl_mmfile_compact( mmf1, &mmf1c,MMF_STD_BLKSIZE, XDL_MMF_ATOMIC) < 0) {
+        CONTEXT_add_error( "mmf1 is not compact - and unable to compact it!");
+        return;
+    }
+
+    mmfile_t  mmf2c;
+    if (xdl_mmfile_compact( mmf2, &mmf2c,MMF_STD_BLKSIZE, XDL_MMF_ATOMIC) < 0) {
+        CONTEXT_add_error( "mmf2 is not compact - and unable to compact it!");
+        return;
+    }
+
+    {
+        xdemitcb_t ecb;
+
+        ecb.priv = mmf_r1;
+        ecb.outf = _mmfile_outf;
+
+        if (xdl_init_mmfile( mmf_r1, MMF_STD_BLKSIZE, XDL_MMF_ATOMIC ) < 0) {
+            CONTEXT_add_error( "Couldn't initialize accumulating mmfile mmf_r1  (xdl_init_atomic)" );
+            return;
+        }
+
+		if (xdl_bpatch( mmf1, mmf2, &ecb) < 0) {
+            CONTEXT_add_error( "Couldn't perform patch (xdl_bpatch)" );
+            return;
+		}
+
+        if ( CONTEXT_mmf_result_2_binary_result( context, 0 ) ) {
+            CONTEXT_add_error( "Wasn't able to read entire mmfile result (mmf_r1) (xdl_read_mmfile)" );
         }
     }
 }
@@ -223,6 +317,67 @@ void __xdiff( context_t *context, const char *string1, const char *string2 ) {
     }
 }
 
+void __xbdiff( context_t *context, const char *string1, const int len1,const char *string2, const int len2 ) {
+
+	mmfile_t *mmf1, *mmf2, *mmf_r1;
+    const char *error;
+
+    mmf1 = &CONTEXT_mmf(0);
+    mmf2 = &CONTEXT_mmf(1);
+    mmf_r1 = &CONTEXT_mmf_result(0);
+
+    initialize_allocator();
+
+    if ( error = _binary_2_mmfile( mmf1, string1,len1 ) ) {
+        CONTEXT_add_error( error );
+        CONTEXT_add_error( "Couldn't load binary1 into mmfile" );
+        return;
+    }
+
+    if ( error = _binary_2_mmfile( mmf2, string2, len2 ) ) {
+        CONTEXT_add_error( error );
+        CONTEXT_add_error( "Couldn't load binary2 into mmfile" );
+        return;
+    }
+    /* Compact the files - needed for binary operations */
+    mmfile_t  mmf1c;
+    if (xdl_mmfile_compact( mmf1, &mmf1c,MMF_STD_BLKSIZE, XDL_MMF_ATOMIC) < 0) {
+        CONTEXT_add_error( "mmf1 is not compact - and unable to compact it!");
+        return;
+    }
+
+    mmfile_t  mmf2c;
+    if (xdl_mmfile_compact( mmf2, &mmf2c,MMF_STD_BLKSIZE, XDL_MMF_ATOMIC) < 0) {
+        CONTEXT_add_error( "mmf2 is not compact - and unable to compact it!");
+        return;
+    }
+
+    {
+        bdiffparam_t bdp;
+            bdp.bsize=16;
+
+        xdemitcb_t ecb;
+            ecb.priv = mmf_r1;
+            ecb.outf = _mmfile_outf;
+
+        if (xdl_init_mmfile( mmf_r1, MMF_STD_BLKSIZE, XDL_MMF_ATOMIC ) < 0) {
+            CONTEXT_add_error( "Couldn't initialize accumulating mmfile (xdl_init_atomic)" );
+            return;
+        }
+
+		if (xdl_bdiff( &mmf1c, &mmf2c, &bdp, &ecb ) < 0) {
+            CONTEXT_add_error( "Couldn't perform diff (xdl_bdiff)" );
+            return;
+		}
+        xdl_free_mmfile(&mmf1c);
+        xdl_free_mmfile(&mmf2c);
+
+        if ( CONTEXT_mmf_result_2_binary_result( context, 0 ) ) {
+            CONTEXT_add_error( "Wasn't able to read entire mmfile result (xdl_read_mmfile)" );
+        }
+    }
+}
+
 MODULE = Diff::LibXDiff PACKAGE = Diff::LibXDiff
 
 PROTOTYPES: disable
@@ -250,6 +405,33 @@ _xdiff(string1, string2)
         RETVAL
 
 SV*
+_xbdiff(string1, string2)
+    SV* string1
+    SV* string2
+    INIT:
+        context_t context = { 0 };
+        RETVAL = &PL_sv_undef;
+    CODE:
+        int str1_len=sv_len(string1);
+        int str2_len=sv_len(string2);
+        __xbdiff( &context, SvPVX(string1), str1_len, SvPVX(string2), str2_len);
+        HV* hash_result = (HV*) sv_2mortal( (SV*) newHV() );
+        AV* error_result = (AV*) sv_2mortal( (SV*) newAV() );
+        int ii;
+        for (ii = 0; ii < context.error_counter; ii++) {
+            av_push( error_result, newSVpv( context.error[ii], 0 ) );
+        }
+        hv_store(  hash_result, "result", 6, newSVpv(
+            context.string_result[0],
+            context.string_result_length[0]),
+        0);
+        hv_store(  hash_result, "error", 5, newRV( (SV*) error_result ), 0);
+        CONTEXT_cleanup( &context );
+        RETVAL = newRV( (SV*) hash_result );
+    OUTPUT:
+        RETVAL
+
+SV*
 _xpatch(string1, string2)
     SV* string1
     SV* string2
@@ -266,6 +448,33 @@ _xpatch(string1, string2)
         }
         hv_store(  hash_result, "result", 6, newSVpv( context.string_result[0], 0 ), 0);
         hv_store(  hash_result, "rejected_result", 15, newSVpv( context.string_result[1], 0 ), 0);
+        hv_store(  hash_result, "error", 5, newRV( (SV*) error_result ), 0);
+        CONTEXT_cleanup( &context );
+        RETVAL = newRV( (SV*) hash_result );
+    OUTPUT:
+        RETVAL
+
+SV*
+_xbpatch(string1, string2)
+    SV* string1
+    SV* string2
+    INIT:
+        context_t context = { 0 };
+        RETVAL = &PL_sv_undef;
+    CODE:
+        int str1_len=sv_len(string1);
+        int str2_len=sv_len(string2);
+        __xbpatch( &context, SvPVX(string1), str1_len, SvPVX(string2), str2_len);
+        HV* hash_result = (HV*) sv_2mortal( (SV*) newHV() );
+        AV* error_result = (AV*) sv_2mortal( (SV*) newAV() );
+        int ii;
+        for (ii = 0; ii < context.error_counter; ii++) {
+            av_push( error_result, newSVpv( context.error[ii], 0 ) );
+        }
+        hv_store(  hash_result, "result", 6, newSVpv(
+            context.string_result[0],
+            context.string_result_length[0] ),
+        0);
         hv_store(  hash_result, "error", 5, newRV( (SV*) error_result ), 0);
         CONTEXT_cleanup( &context );
         RETVAL = newRV( (SV*) hash_result );

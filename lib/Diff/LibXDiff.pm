@@ -9,11 +9,11 @@ Diff::LibXDiff - Calculate a diff with LibXDiff (via XS)
 
 =head1 VERSION
 
-Version 0.04
+Version 0.05
 
 =cut
 
-our $VERSION = '0.04';
+our $VERSION = '0.05';
 
 =head1 SYNOPSIS
 
@@ -33,6 +33,7 @@ our $VERSION = '0.04';
     _END_
 
     my $diff = Diff::LibXDiff->diff( $string1, $string2 )
+    my $bin_diff = Diff::LibXDiff->bdiff( $bin_string1, $bin_string2 )
 
     # $diff is ...
 
@@ -75,6 +76,14 @@ Calculate the patched string given an original string and a patch string
 
 If the patching algorithm cannot place a hunk, it will return a second "rejected" result (if called in list context)
 
+=head2 $bdiff = Diff::LibXDiff->bdiff( $bin1, $bin2 )
+
+Calculate the binary diff of $bin1 and $bin2 and return result as a string
+
+=head2 $bpatched = Diff::LibXDiff->bpatch( $original, $patch )
+
+Calculate the patched binary given an original string and a patch string
+
 =cut
 
 sub diff {
@@ -87,6 +96,27 @@ sub diff {
     croak "string2 isn't a string" if ref $string2;
 
     my $result = _xdiff( $string1, $string2 );
+
+    my @error = @{ $result->{error} };
+
+    croak join '', "Unable to process the diff of string1 & string2: ", join ', ', @error if @error;
+
+    return wantarray ?
+        ( $result->{result} ) :
+        $result->{result}
+    ;
+}
+
+sub bdiff {
+    my $self = shift;
+    my ($string1, $string2) = @_;
+
+    croak "String1 not defined" unless defined $string1;
+    croak "String2 not defined" unless defined $string2;
+    croak "string1 isn't a string" if ref $string1;
+    croak "string2 isn't a string" if ref $string2;
+
+    my $result = _xbdiff( $string1, $string2 );
 
     my @error = @{ $result->{error} };
 
@@ -117,6 +147,26 @@ sub patch {
         ( $result->{result},  $result->{rejected_result} ) :
         $result->{result};
 
+}
+
+sub bpatch {
+    my $self = shift;
+    my ($string1, $string2) = @_;
+
+    croak "string1 not defined" unless defined $string1;
+    croak "string2 not defined" unless defined $string2;
+    croak "string1 isn't a string" if ref $string1;
+    croak "string2 isn't a string" if ref $string2;
+
+    my $result = _xbpatch( $string1, $string2 );
+
+    my @error = @{ $result->{error} };
+
+    croak join '', "Unable to process the patch of string1 & string2: ", join ', ', @error if @error;
+
+    return wantarray ?
+        ( $result->{result},  $result->{rejected_result} ) :
+        $result->{result};
 }
 
 =head1 AUTHOR

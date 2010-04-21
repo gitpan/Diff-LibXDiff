@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:               Diff-LibXDiff
-version:            0.04
+version:            0.05
 abstract:           Calculate a diff with LibXDiff (via XS)
 author:
     - Robert Krimen <rkrimen@cpan.org>

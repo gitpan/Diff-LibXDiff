@@ -6,6 +6,10 @@ README
 t/00-load.t
 t/01-diff.t
 t/02-patch.t
+t/assets/binary1.base64
+t/assets/binary2.base64
+t/assets/binarydiff.base64
+t/Test.pm
 lib/Diff/LibXDiff.pm
 xdiff.c
 xdiff/xadler32.h

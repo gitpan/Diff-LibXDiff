@@ -2,7 +2,7 @@ NAME
     Diff::LibXDiff - Calculate a diff with LibXDiff (via XS)
 
 VERSION
-    Version 0.04
+    Version 0.05
 
 SYNOPSIS
         use Diff::LibXDiff;
@@ -21,6 +21,7 @@ SYNOPSIS
         _END_
 
         my $diff = Diff::LibXDiff->diff( $string1, $string2 )
+        my $bin_diff = Diff::LibXDiff->bdiff( $bin_string1, $bin_string2 )
 
         # $diff is ...
 
@@ -48,6 +49,13 @@ METHODS
 
     If the patching algorithm cannot place a hunk, it will return a second
     "rejected" result (if called in list context)
+
+  $bdiff = Diff::LibXDiff->bdiff( $bin1, $bin2 )
+    Calculate the binary diff of $bin1 and $bin2 and return result as a
+    string
+
+  $bpatched = Diff::LibXDiff->bpatch( $original, $patch )
+    Calculate the patched binary given an original string and a patch string
 
 AUTHOR
     Robert Krimen, "<rkrimen at cpan.org>"

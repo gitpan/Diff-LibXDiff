@@ -7,9 +7,11 @@ use Test::Most;
 
 plan qw/no_plan/;
 
+use t::Test;
 use Diff::LibXDiff;
 
 my ($diff, $string1, $string2);
+my ($bdiff, $file1, $file2,$filediff);
 
 $diff = Diff::LibXDiff->diff( 'A', 'b' );
 is( $diff, <<'_END_');
@@ -43,3 +45,12 @@ is( $diff, <<'_END_' );
  cherry
 +lime
 _END_
+
+SKIP: {
+    my $base64 = t::Test->base64;
+    skip "Missing or restricted $base64" unless -x $base64;
+    my %data = t::Test->data;
+
+    $bdiff = Diff::LibXDiff->bdiff( $data{binary1}, $data{binary2} );
+    is( $bdiff, $data{binarydiff} );
+}
